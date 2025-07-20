@@ -221,13 +221,11 @@
             refreshButton.disabled = true; // Disable button during fetch
 
             try {
-                // !!! IMPORTANT: THIS URL WILL BE UPDATED LATER !!!
-                // You will replace 'YOUR_BACKEND_RENDER_URL_HERE'
-                // with the actual URL you get from Render after deploying your backend.
                 const response = await fetch('https://my-quotes-api.onrender.com/api/quote');
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                // FIX: Await the response.json() call to ensure data is parsed before access
                 const data = await response.json();
 
                 // Update the DOM with the new quote
