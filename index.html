@@ -10,18 +10,30 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"; // Removed signInWithCustomToken
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        // import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js"; // Optional: if you want analytics
 
-        // Global variables for Firebase (provided by Canvas environment)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Your web app's Firebase configuration - NOW WITH YOUR ACTUAL VALUES
+        const firebaseConfig = {
+            apiKey: "AIzaSyC4XhwTkXjYKGPfoLdb5BucR0lIaAfHRnI",
+            authDomain: "ideal-quotes.firebaseapp.com",
+            projectId: "ideal-quotes",
+            storageBucket: "ideal-quotes.firebasestorage.app",
+            messagingSenderId: "692105549685",
+            appId: "1:692105549685:web:1840f1454732a62a08a53c",
+            measurementId: "G-PYYL48LD6W" // Included your measurementId
+        };
+
+        // For Netlify deployment, we derive appId from firebaseConfig
+        const appId = firebaseConfig.projectId; // Using Firebase projectId as a unique identifier for Firestore paths
+        // initialAuthToken is not used for direct web deployment; anonymous auth is used instead.
 
         let app;
         let db;
         let auth;
         let currentUserId = null;
+        // let analytics; // Optional: if you uncomment getAnalytics import
 
         // Custom message box function (replaces alert/confirm)
         function showMessage(message, type = 'info') {
@@ -38,14 +50,11 @@
         // Initialize Firebase and authenticate user
         async function initializeFirebase() {
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    console.error("Firebase config is empty. Cannot initialize Firebase.");
-                    showMessage("Error: Firebase not configured.", "error");
-                    return;
-                }
+                // No need for config check as we're now using a hardcoded valid config
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
+                // analytics = getAnalytics(app); // Optional: if you uncomment getAnalytics import
 
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
@@ -54,12 +63,8 @@
                         console.log("Firebase initialized. User authenticated:", currentUserId);
                         loadUserQuotes(); // Load quotes once user is authenticated
                     } else {
-                        // Sign in anonymously if no token, or with custom token
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                        // Sign in anonymously for persistent user data without login
+                        await signInAnonymously(auth);
                     }
                 });
             } catch (error) {
@@ -89,6 +94,8 @@
             }
 
             try {
+                // Firestore path: artifacts/{appId}/users/{userId}/user_quotes
+                // Using firebaseConfig.projectId as appId for consistency in external deployment
                 const userQuotesCollectionRef = collection(db, `artifacts/${appId}/users/${currentUserId}/user_quotes`);
                 await addDoc(userQuotesCollectionRef, {
                     quoteText: quoteText,
@@ -115,23 +122,21 @@
             }
 
             const userQuotesList = document.getElementById('userQuotesList');
-            // FIX: Add dark:text-gray-300 to loading/empty messages
             userQuotesList.innerHTML = '<p class="text-gray-500 dark:text-gray-300">Loading your quotes...</p>'; // Loading indicator
 
+            // Firestore path: artifacts/{appId}/users/{userId}/user_quotes
             const userQuotesCollectionRef = collection(db, `artifacts/${appId}/users/${currentUserId}/user_quotes`);
             const q = query(userQuotesCollectionRef, orderBy('timestamp', 'desc')); // Order by newest first
 
             onSnapshot(q, (snapshot) => {
                 userQuotesList.innerHTML = ''; // Clear previous quotes
                 if (snapshot.empty) {
-                    // FIX: Add dark:text-gray-300 to empty state message
                     userQuotesList.innerHTML = '<p class="text-gray-500 dark:text-gray-300">No quotes added by you yet. Add one above!</p>';
                     return;
                 }
                 snapshot.forEach((doc) => {
                     const quoteData = doc.data();
                     const quoteElement = document.createElement('div');
-                    // FIX: Ensure dynamically added quote elements also have dark mode background and text colors
                     quoteElement.className = 'bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-2 shadow-sm';
                     quoteElement.innerHTML = `
                         <p class="font-semibold text-gray-800 dark:text-gray-200">"${quoteData.quoteText}"</p>
@@ -241,7 +246,15 @@
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
         }
         /* FIX: Ensure h2 headings explicitly change color in dark mode */
-        body.dark-mode h2 {
+        .quote-container h2,
+        .add-quote-container h2,
+        .user-quotes-section h2 {
+            color: #1a202c; /* Default light mode color */
+            transition: color 0.3s ease;
+        }
+        body.dark-mode .quote-container h2,
+        body.dark-mode .add-quote-container h2,
+        body.dark-mode .user-quotes-section h2 {
             color: #f7fafc; /* Very light color for headings in dark mode */
         }
         body.dark-mode .quote-text {
