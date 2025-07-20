@@ -7,20 +7,164 @@
     <!-- Tailwind CSS CDN for easy styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // Global variables for Firebase (provided by Canvas environment)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app;
+        let db;
+        let auth;
+        let currentUserId = null;
+
+        // Custom message box function (replaces alert/confirm)
+        function showMessage(message, type = 'info') {
+            const messageBox = document.getElementById('messageBox');
+            const messageText = document.getElementById('messageText');
+            messageText.textContent = message;
+            messageBox.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white ${type === 'error' ? 'bg-red-600' : 'bg-green-600'} z-50`;
+            messageBox.classList.remove('hidden');
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Initialize Firebase and authenticate user
+        async function initializeFirebase() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config is empty. Cannot initialize Firebase.");
+                    showMessage("Error: Firebase not configured.", "error");
+                    return;
+                }
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        document.getElementById('currentUserIdDisplay').textContent = `User ID: ${currentUserId}`;
+                        console.log("Firebase initialized. User authenticated:", currentUserId);
+                        loadUserQuotes(); // Load quotes once user is authenticated
+                    } else {
+                        // Sign in anonymously if no token, or with custom token
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Error initializing Firebase or authenticating:", error);
+                showMessage(`Firebase Init Error: ${error.message}`, "error");
+            }
+        }
+
+        // Function to save a new quote to Firestore
+        window.saveQuote = async function() {
+            if (!currentUserId) {
+                showMessage("Please wait, user not authenticated yet.", "error");
+                return;
+            }
+
+            const quoteTextInput = document.getElementById('newQuoteText');
+            const authorInput = document.getElementById('newQuoteAuthor');
+            const bookInput = document.getElementById('newQuoteBook');
+
+            const quoteText = quoteTextInput.value.trim();
+            const author = authorInput.value.trim();
+            const book = bookInput.value.trim();
+
+            if (!quoteText || !author || !book) {
+                showMessage("Please fill in all quote fields.", "error");
+                return;
+            }
+
+            try {
+                const userQuotesCollectionRef = collection(db, `artifacts/${appId}/users/${currentUserId}/user_quotes`);
+                await addDoc(userQuotesCollectionRef, {
+                    quoteText: quoteText,
+                    author: author,
+                    book: book,
+                    timestamp: serverTimestamp() // Use server timestamp for consistent ordering
+                });
+                showMessage("Quote saved successfully!", "info");
+                // Clear input fields
+                quoteTextInput.value = '';
+                authorInput.value = '';
+                bookInput.value = '';
+            } catch (error) {
+                console.error("Error saving quote:", error);
+                showMessage(`Error saving quote: ${error.message}`, "error");
+            }
+        };
+
+        // Function to load and display user-submitted quotes in real-time
+        function loadUserQuotes() {
+            if (!db || !currentUserId) {
+                console.log("Firestore not ready or user not authenticated for loading quotes.");
+                return;
+            }
+
+            const userQuotesList = document.getElementById('userQuotesList');
+            // FIX: Add dark:text-gray-300 to loading/empty messages
+            userQuotesList.innerHTML = '<p class="text-gray-500 dark:text-gray-300">Loading your quotes...</p>'; // Loading indicator
+
+            const userQuotesCollectionRef = collection(db, `artifacts/${appId}/users/${currentUserId}/user_quotes`);
+            const q = query(userQuotesCollectionRef, orderBy('timestamp', 'desc')); // Order by newest first
+
+            onSnapshot(q, (snapshot) => {
+                userQuotesList.innerHTML = ''; // Clear previous quotes
+                if (snapshot.empty) {
+                    // FIX: Add dark:text-gray-300 to empty state message
+                    userQuotesList.innerHTML = '<p class="text-gray-500 dark:text-gray-300">No quotes added by you yet. Add one above!</p>';
+                    return;
+                }
+                snapshot.forEach((doc) => {
+                    const quoteData = doc.data();
+                    const quoteElement = document.createElement('div');
+                    // FIX: Ensure dynamically added quote elements also have dark mode background and text colors
+                    quoteElement.className = 'bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-2 shadow-sm';
+                    quoteElement.innerHTML = `
+                        <p class="font-semibold text-gray-800 dark:text-gray-200">"${quoteData.quoteText}"</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">-- ${quoteData.author}, <em>${quoteData.book}</em></p>
+                    `;
+                    userQuotesList.appendChild(quoteElement);
+                });
+            }, (error) => {
+                console.error("Error listening to user quotes:", error);
+                userQuotesList.innerHTML = `<p class="text-red-500 dark:text-red-400">Error loading your quotes: ${error.message}</p>`;
+            });
+        }
+
+        // Call Firebase initialization when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', initializeFirebase);
+    </script>
+
     <style>
         /* Base styles for light mode */
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f0f4f8; /* Light blue-gray background */
             display: flex;
+            flex-direction: column; /* Changed to column for multiple sections */
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             margin: 0;
             color: #334155; /* Darker text color */
             transition: background-color 0.3s ease, color 0.3s ease; /* Smooth transition for theme change */
+            padding: 2rem; /* Added padding for overall layout */
         }
-        .quote-container {
+        .quote-container, .add-quote-container, .user-quotes-section {
             background-color: #ffffff;
             border-radius: 1.5rem; /* More rounded corners */
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Deeper shadow */
@@ -29,8 +173,9 @@
             width: 600px;
             text-align: center;
             transition: transform 0.3s ease-in-out, background-color 0.3s ease, box-shadow 0.3s ease;
+            margin-bottom: 2rem; /* Space between sections */
         }
-        .quote-container:hover {
+        .quote-container:hover, .add-quote-container:hover {
             transform: translateY(-5px); /* Slight lift on hover */
         }
         .quote-text {
@@ -48,7 +193,7 @@
             margin-top: 1rem;
             transition: color 0.3s ease;
         }
-        .refresh-button {
+        .refresh-button, .save-button {
             background-color: #4f46e5; /* Indigo */
             color: white;
             padding: 0.875rem 2rem; /* py-3 px-8 */
@@ -62,11 +207,11 @@
             margin-top: 2rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
-        .refresh-button:hover {
+        .refresh-button:hover, .save-button:hover {
             background-color: #4338ca; /* Darker indigo on hover */
             transform: translateY(-2px);
         }
-        .refresh-button:active {
+        .refresh-button:active, .save-button:active {
             transform: translateY(0);
             box-shadow: none;
         }
@@ -89,11 +234,15 @@
         /* Dark Mode Styles */
         body.dark-mode {
             background-color: #1a202c; /* Dark background */
-            color: #e2e8f0; /* Light text color */
+            color: #e2e8f0; /* Light text color for general body content */
         }
-        body.dark-mode .quote-container {
-            background-color: #2d3748; /* Darker container */
+        body.dark-mode .quote-container, body.dark-mode .add-quote-container, body.dark-mode .user-quotes-section {
+            background-color: #2d3748; /* Darker container background */
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+        }
+        /* FIX: Ensure h2 headings explicitly change color in dark mode */
+        body.dark-mode h2 {
+            color: #f7fafc; /* Very light color for headings in dark mode */
         }
         body.dark-mode .quote-text {
             color: #f7fafc; /* Lighter quote text */
@@ -101,11 +250,11 @@
         body.dark-mode .quote-source {
             color: #a0aec0; /* Lighter source text */
         }
-        body.dark-mode .refresh-button {
+        body.dark-mode .refresh-button, body.dark-mode .save-button {
             background-color: #667eea; /* Lighter indigo for dark mode button */
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.15);
         }
-        body.dark-mode .refresh-button:hover {
+        body.dark-mode .refresh-button:hover, body.dark-mode .save-button:hover {
             background-color: #5a67d8; /* Darker on hover */
         }
         body.dark-mode .loading-spinner {
@@ -147,9 +296,45 @@
             background-color: #2d3748; /* Even darker on hover */
         }
 
+        /* Input fields */
+        .input-field {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid #cbd5e0; /* Light gray border */
+            background-color: #f8fafc; /* Very light background */
+            color: #334155;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3); /* Focus ring */
+        }
+        body.dark-mode .input-field {
+            background-color: #4a5568; /* Darker background in dark mode */
+            border-color: #64748b; /* Darker border */
+            color: #e2e8f0;
+        }
+        body.dark-mode .input-field::placeholder {
+            color: #a0aec0;
+        }
+
+        /* Message Box */
+        #messageBox {
+            animation: fadeInOut 3s forwards;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(20px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(20px); }
+        }
+
         /* Responsive adjustments */
         @media (max-width: 768px) {
-            .quote-container {
+            .quote-container, .add-quote-container, .user-quotes-section {
                 padding: 1.5rem;
             }
             .quote-text {
@@ -158,7 +343,7 @@
             .quote-source {
                 font-size: 1rem; /* text-base on smaller screens */
             }
-            .refresh-button {
+            .refresh-button, .save-button {
                 padding: 0.75rem 1.5rem; /* py-2 px-6 */
                 font-size: 1rem; /* text-base */
             }
@@ -172,27 +357,67 @@
     </style>
 </head>
 <body>
+    <!-- Message Box for user feedback -->
+    <div id="messageBox" class="hidden">
+        <p id="messageText"></p>
+    </div>
+
     <!-- Theme Toggle Button -->
     <button id="themeToggleButton" class="theme-toggle-button">
         <span id="themeIcon">☀️</span> <span id="themeText">Light Mode</span>
     </button>
 
+    <!-- Section for displaying random quotes -->
     <div class="quote-container">
+        <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">Random Book Quote</h2>
         <div id="loadingSpinner" class="loading-spinner"></div>
-        <div id="quoteContent" class="hidden">
+        <div id="quoteContent">
             <p id="quoteText" class="quote-text">Loading a beautiful quote...</p>
-            <p id="quoteSource" class="quote-source">— Author, *Book Title*</p>
+            <p id="quoteSource" class="quote-source">— Author, <em>Book Title</em></p>
         </div>
         <button id="refreshButton" class="refresh-button">Get New Quote</button>
     </div>
 
-    <script>
-        // Get references to DOM elements
+    <!-- Section for adding new quotes -->
+    <div class="add-quote-container">
+        <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">Add Your Own Quote</h2>
+        <div class="flex flex-col items-center">
+            <textarea id="newQuoteText" class="input-field h-32 resize-none" placeholder="Enter your quote here..."></textarea>
+            <input type="text" id="newQuoteAuthor" class="input-field" placeholder="Author">
+            <input type="text" id="newQuoteBook" class="input-field" placeholder="Book Title">
+            <button id="saveQuoteButton" class="save-button" onclick="saveQuote()">Save Quote</button>
+        </div>
+    </div>
+
+    <!-- Section for displaying user-submitted quotes -->
+    <div class="user-quotes-section">
+        <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">Your Added Quotes</h2>
+        <p id="currentUserIdDisplay" class="text-sm text-gray-600 dark:text-gray-400 mb-4">User ID: Loading...</p>
+        <div id="userQuotesList" class="text-left">
+            <!-- FIX: Added dark:text-gray-300 to these default messages -->
+            <p class="text-gray-500 dark:text-gray-300">No quotes added by you yet. Add one above!</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // Get references to DOM elements for the random quote section
         const quoteText = document.getElementById('quoteText');
         const quoteSource = document.getElementById('quoteSource');
         const refreshButton = document.getElementById('refreshButton');
         const loadingSpinner = document.getElementById('loadingSpinner');
         const quoteContent = document.getElementById('quoteContent');
+
+        // Get references to DOM elements for the new quote section
+        const newQuoteText = document.getElementById('newQuoteText');
+        const newQuoteAuthor = document.getElementById('newQuoteAuthor');
+        const newQuoteBook = document.getElementById('newQuoteBook');
+        const saveQuoteButton = document.getElementById('saveQuoteButton');
+
+        // Get references to DOM elements for the user quotes list
+        const userQuotesList = document.getElementById('userQuotesList');
+        const currentUserIdDisplay = document.getElementById('currentUserIdDisplay');
+
+        // Theme toggle elements
         const themeToggleButton = document.getElementById('themeToggleButton');
         const themeIcon = document.getElementById('themeIcon');
         const themeText = document.getElementById('themeText');
@@ -221,12 +446,12 @@
             refreshButton.disabled = true; // Disable button during fetch
 
             try {
+                // IMPORTANT: Replace 'https://my-quotes-api.onrender.com' with your deployed backend URL
                 const response = await fetch('https://my-quotes-api.onrender.com/api/quote');
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                // FIX: Await the response.json() call to ensure data is parsed before access
-                const data = await response.json();
+                const data = await response.json(); // Await the JSON parsing
 
                 // Update the DOM with the new quote
                 quoteText.textContent = `"${data.quote}"`;
@@ -262,7 +487,7 @@
             } else {
                 applyTheme(false); // Default to light mode if no preference or 'light'
             }
-            fetchQuote(); // Fetch the initial quote
+            fetchQuote(); // Fetch the initial random quote
         });
     </script>
 </body>
