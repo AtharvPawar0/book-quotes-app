@@ -224,7 +224,7 @@
                 // !!! IMPORTANT: THIS URL WILL BE UPDATED LATER !!!
                 // You will replace 'YOUR_BACKEND_RENDER_URL_HERE'
                 // with the actual URL you get from Render after deploying your backend.
-                const response = await fetch('YOUR_BACKEND_RENDER_URL_HERE/api/quote');
+                const response = await fetch('https://my-quotes-api.onrender.com/api/quote');
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
